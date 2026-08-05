@@ -25,6 +25,10 @@
   ::-webkit-scrollbar-track{background:#f1f5f9;}
   ::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:4px;}
   ::-webkit-scrollbar-thumb:hover{background:#64748b;}
+
+  .sidebar-link{background:none;border:none;color:inherit;cursor:pointer;font-family:inherit;font-size:inherit;width:100%;text-align:left;}
+  .sidebar-link:focus{outline:none;}
+
 </style>
 <script>
   tailwind.config={theme:{extend:{colors:{primary:'#0f766e',secondary:'#14b8a6',accent:'#10b981',dark:'#0f172a'}}}};
@@ -90,46 +94,46 @@
       </div>
     </div>
     <nav class="flex-1 overflow-y-auto py-4">
-      <a href="javascript:void(0)" onclick="navigate('dashboard')" id="nav-dashboard" class="sidebar-link active flex items-center gap-3 px-6 py-3 text-sm">
+      <button type="button" onclick="navigate('dashboard')" id="nav-dashboard" class="sidebar-link active flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-chart-line w-5 text-center"></i> Dashboard
-      </a>
+      </button>
       <div class="px-6 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-2">Pacientes</div>
-      <a href="javascript:void(0)" onclick="navigate('pacientes')" id="nav-pacientes" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      <button type="button" onclick="navigate('pacientes')" id="nav-pacientes" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-user-injured w-5 text-center"></i> Pacientes
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('citas')" id="nav-citas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('citas')" id="nav-citas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-calendar-check w-5 text-center"></i> Control de Citas
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('consultas')" id="nav-consultas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('consultas')" id="nav-consultas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-stethoscope w-5 text-center"></i> Consultas Médicas
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('rehabilitacion')" id="nav-rehabilitacion" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('rehabilitacion')" id="nav-rehabilitacion" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-wheelchair w-5 text-center"></i> Control Rehabilitación
-      </a>
+      </button>
       <div class="px-6 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-2">Catálogos</div>
-      <a href="javascript:void(0)" onclick="navigate('medicos')" id="nav-medicos" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      <button type="button" onclick="navigate('medicos')" id="nav-medicos" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-user-md w-5 text-center"></i> Médicos (Fisiatras)
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('fisioterapeutas')" id="nav-fisioterapeutas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('fisioterapeutas')" id="nav-fisioterapeutas" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-hand-holding-medical w-5 text-center"></i> Fisioterapeutas
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('especialidades')" id="nav-especialidades" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('especialidades')" id="nav-especialidades" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-list w-5 text-center"></i> Especialidades
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('terapias')" id="nav-terapias" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('terapias')" id="nav-terapias" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-spa w-5 text-center"></i> Tipos de Terapia
-      </a>
-      <a href="javascript:void(0)" onclick="navigate('estados')" id="nav-estados" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+      </button>
+      <button type="button" onclick="navigate('estados')" id="nav-estados" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
         <i class="fas fa-tags w-5 text-center"></i> Estados
-      </a>
+      </button>
       <div id="menu-admin" class="hidden">
         <div class="px-6 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mt-2">Administración</div>
-        <a href="javascript:void(0)" onclick="navigate('usuarios')" id="nav-usuarios" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+        <button type="button" onclick="navigate('usuarios')" id="nav-usuarios" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
           <i class="fas fa-users-cog w-5 text-center"></i> Usuarios del Sistema
-        </a>
-        <a href="javascript:void(0)" onclick="navigate('auditoria')" id="nav-auditoria" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
+        </button>
+        <button type="button" onclick="navigate('auditoria')" id="nav-auditoria" class="sidebar-link flex items-center gap-3 px-6 py-3 text-sm">
           <i class="fas fa-clipboard-list w-5 text-center"></i> Auditoría
-        </a>
+        </button>
       </div>
     </nav>
     <div class="p-4 border-t border-slate-700">
