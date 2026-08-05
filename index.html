@@ -193,7 +193,7 @@
 // ==================== CONFIGURACIÓN SUPABASE ====================
 // REEMPLAZAR con tus credenciales de Supabase
 const SUPABASE_URL = 'https://guwsjhryhmnzralvkyms.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_Nc1B8YSCxh3zymfrqmyx9A_GyL6CMHP';
+const SUPABASE_ANON_KEY = 'sb_publishable_Nc1B8YSCxh3zymfrqmyx9A_GyL6CMHP;
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -246,7 +246,7 @@ async function loadUser(user){
   }
 
   // Ocultar opciones según rol
-  if(userRole==='secretaria'){
+  if(userRole==='asistente_administrativo'){
     hideNav(['consultas','rehabilitacion','medicos','fisioterapeutas','especialidades','terapias','estados']);
   } else if(userRole==='fisiatra'){
     hideNav(['citas','rehabilitacion','usuarios','auditoria']);
@@ -872,7 +872,7 @@ async function renderCitas(){
       <td class="px-4 py-3">
         <div class="flex items-center gap-1">
           <button onclick="openCitaModal(${c.id})" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition" title="Editar"><i class="fas fa-edit"></i></button>
-          ${userRole==='superadmin'||userRole==='admin'||userRole==='secretaria'?`<button onclick="deleteRecord('citas',${c.id})" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="Eliminar"><i class="fas fa-trash"></i></button>`:''}
+          ${userRole==='superadmin'||userRole==='admin'||userRole==='asistente_administrativo'?`<button onclick="deleteRecord('citas',${c.id})" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="Eliminar"><i class="fas fa-trash"></i></button>`:''}
         </div>
       </td>
     </tr>`;
@@ -1086,14 +1086,14 @@ async function saveConsulta(e){
 async function renderRehabilitacion(){
   const area=$('content-area');
   area.innerHTML='<div class="flex items-center justify-center h-64"><i class="fas fa-circle-notch fa-spin text-3xl text-teal-600"></i></div>';
-  const {data:controles,error}=await supabase.from('control_rehabilitacion').select('*,paciente:paciente_id(nombres,apellidos,cedula,numero_historia),fisioterapeuta:fisioterapeuta_id(nombres,apellidos)').order('fecha_inicio',{ascending:false});
+  const {data:controles,error}=await supabase.from('control_rehabilitacion').select('*,paciente:paciente_id(nombres,apellidos,cedula,numero_historia,edad,sexo,fecha_nacimiento,estado:estado_id(nombre)),fisioterapeuta:fisioterapeuta_id(nombres,apellidos)').order('fecha_inicio',{ascending:false});
   if(error){showToast(error.message,'error');return;}
 
   let html=`<div class="fade-in">
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-4">
         <button onclick="openRehabModal()" class="bg-teal-700 hover:bg-teal-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition"><i class="fas fa-plus"></i> Nuevo Control</button>
-        <input type="text" id="search-rehab" onkeyup="filterTable('rehab')" placeholder="Buscar..." class="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
+        <input type="text" id="search-rehab" onkeyup="filterTable('rehab')" placeholder="Buscar por historia, cédula o nombre..." class="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
       </div>
       <button onclick="exportTable('rehab')" class="text-slate-600 hover:text-teal-700 px-3 py-2 border border-slate-300 rounded-lg transition"><i class="fas fa-file-excel mr-1"></i> Exportar</button>
     </div>
@@ -1103,6 +1103,7 @@ async function renderRehabilitacion(){
           <thead><tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
             <th class="text-left px-4 py-3 font-semibold">Historia</th>
             <th class="text-left px-4 py-3 font-semibold">Paciente</th>
+            <th class="text-left px-4 py-3 font-semibold">Cédula</th>
             <th class="text-left px-4 py-3 font-semibold">Fisioterapeuta</th>
             <th class="text-left px-4 py-3 font-semibold">Inicio</th>
             <th class="text-left px-4 py-3 font-semibold">Sesiones</th>
@@ -1112,18 +1113,19 @@ async function renderRehabilitacion(){
           <tbody>`;
 
   (controles||[]).forEach(c=>{
-    html+=`<tr class="border-b border-slate-50 hover:bg-slate-50 transition" data-search="${(c.paciente?.numero_historia+' '+c.paciente?.nombres+' '+c.paciente?.apellidos).toLowerCase()}">
-      <td class="px-4 py-3 font-mono text-teal-700">${c.paciente?.numero_historia||'-'}</td>
+    html+=`<tr class="border-b border-slate-50 hover:bg-slate-50 transition" data-search="${(c.paciente?.numero_historia+' '+c.paciente?.nombres+' '+c.paciente?.apellidos+' '+c.paciente?.cedula).toLowerCase()}">
+      <td class="px-4 py-3 font-mono text-teal-700 font-medium">${c.paciente?.numero_historia||'-'}</td>
       <td class="px-4 py-3">${c.paciente?c.paciente.nombres+' '+c.paciente.apellidos:'-'}</td>
+      <td class="px-4 py-3">${c.paciente?.cedula||'-'}</td>
       <td class="px-4 py-3">${c.fisioterapeuta?c.fisioterapeuta.nombres+' '+c.fisioterapeuta.apellidos:'-'}</td>
       <td class="px-4 py-3">${formatDate(c.fecha_inicio)}</td>
-      <td class="px-4 py-3 font-bold text-teal-700">${c.numero_sesiones}</td>
+      <td class="px-4 py-3 font-bold text-teal-700">${c.numero_sesiones}/15</td>
       <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${c.estado==='Activo'?'bg-green-100 text-green-700':(c.estado==='Finalizado'?'bg-slate-100 text-slate-700':'bg-red-100 text-red-700')}">${c.estado}</span></td>
       <td class="px-4 py-3">
         <div class="flex items-center gap-1">
+          <button onclick="openRehabPlanilla(${c.id})" class="text-teal-600 hover:bg-teal-50 p-2 rounded-lg transition" title="Ver Planilla"><i class="fas fa-clipboard-list"></i></button>
           <button onclick="openRehabModal(${c.id})" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition" title="Editar"><i class="fas fa-edit"></i></button>
           ${userRole==='superadmin'||userRole==='admin'?`<button onclick="deleteRecord('control_rehabilitacion',${c.id})" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="Eliminar"><i class="fas fa-trash"></i></button>`:''}
-          <button onclick="openSesionesModal(${c.id})" class="text-teal-600 hover:bg-teal-50 p-2 rounded-lg transition" title="Sesiones de Terapia"><i class="fas fa-list-ol"></i></button>
         </div>
       </td>
     </tr>`;
@@ -1136,7 +1138,7 @@ async function renderRehabilitacion(){
 async function openRehabModal(id=null){
   editingId=id; editingType='control_rehabilitacion';
   const [{data:pacientes},{data:fisios}]=await Promise.all([
-    supabase.from('pacientes').select('id,nombres,apellidos,cedula,numero_historia').eq('activo',true).order('apellidos'),
+    supabase.from('pacientes').select('id,nombres,apellidos,cedula,numero_historia,edad,sexo,fecha_nacimiento,estado:estado_id(nombre),condicion_salud').eq('activo',true).order('apellidos'),
     supabase.from('fisioterapeutas').select('id,nombres,apellidos').eq('activo',true).order('apellidos')
   ]);
   let data={};
@@ -1145,7 +1147,7 @@ async function openRehabModal(id=null){
   const modal=$('modal-container');
   const content=$('modal-content');
   modal.classList.remove('hidden');
-  content.style.maxWidth='40rem';
+  content.style.maxWidth='48rem';
   content.innerHTML=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
     <h3 class="text-lg font-bold text-slate-800">${id?'Editar':'Nuevo'} Control de Rehabilitación</h3>
     <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
@@ -1153,11 +1155,16 @@ async function openRehabModal(id=null){
   <form id="modal-form" class="p-6 space-y-4" onsubmit="saveRehab(event)">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Paciente *</label>
-        <select name="paciente_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
+        <select name="paciente_id" id="rehab-paciente" required onchange="mostrarDatosPaciente()" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
           <option value="">Seleccione...</option>
-          ${(pacientes||[]).map(p=>`<option value="${p.id}" ${data.paciente_id==p.id?'selected':''}>${p.numero_historia} - ${p.apellidos}, ${p.nombres}</option>`).join('')}
+          ${(pacientes||[]).map(p=>`<option value="${p.id}" data-edad="${p.edad||''}" data-sexo="${p.sexo||''}" data-fn="${p.fecha_nacimiento||''}" data-estado="${p.estado?.nombre||''}" data-condicion="${p.condicion_salud||''}">${p.numero_historia} - ${p.apellidos}, ${p.nombres} - ${p.cedula}</option>`).join('')}
         </select>
       </div>
+      <div class="bg-slate-50 p-3 rounded-lg"><p class="text-xs text-slate-500">Edad</p><p class="font-semibold text-sm" id="rehab-edad">-</p></div>
+      <div class="bg-slate-50 p-3 rounded-lg"><p class="text-xs text-slate-500">Sexo</p><p class="font-semibold text-sm" id="rehab-sexo">-</p></div>
+      <div class="bg-slate-50 p-3 rounded-lg"><p class="text-xs text-slate-500">Fecha de Nacimiento</p><p class="font-semibold text-sm" id="rehab-fn">-</p></div>
+      <div class="bg-slate-50 p-3 rounded-lg"><p class="text-xs text-slate-500">Estado</p><p class="font-semibold text-sm" id="rehab-estado">-</p></div>
+      <div class="md:col-span-2 bg-slate-50 p-3 rounded-lg"><p class="text-xs text-slate-500">Condición de Salud</p><p class="font-semibold text-sm" id="rehab-condicion">-</p></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Fisioterapeuta *</label>
         <select name="fisioterapeuta_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
           <option value="">Seleccione...</option>
@@ -1165,7 +1172,6 @@ async function openRehabModal(id=null){
         </select>
       </div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio *</label><input type="date" name="fecha_inicio" value="${data.fecha_inicio||new Date().toISOString().split('T')[0]}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha Fin</label><input type="date" name="fecha_fin" value="${data.fecha_fin||''}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Estado</label>
         <select name="estado" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
           <option value="Activo" ${data.estado==='Activo'?'selected':''}>Activo</option>
@@ -1175,14 +1181,28 @@ async function openRehabModal(id=null){
       </div>
       <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Objetivos</label><textarea name="objetivos" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.objetivos||''}</textarea></div>
       <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Evaluación Inicial</label><textarea name="evaluacion_inicial" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.evaluacion_inicial||''}</textarea></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Evaluación Final</label><textarea name="evaluacion_final" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.evaluacion_final||''}</textarea></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Resultado</label><textarea name="resultado" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.resultado||''}</textarea></div>
     </div>
     <div class="flex justify-end gap-3 pt-4">
       <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
       <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-save mr-1"></i> Guardar</button>
     </div>
   </form>`;
+
+  if(id && data.paciente_id){
+    const sel=$('rehab-paciente');
+    if(sel){ sel.value=data.paciente_id; mostrarDatosPaciente(); }
+  }
+}
+
+function mostrarDatosPaciente(){
+  const sel=$('rehab-paciente');
+  if(!sel||!sel.selectedOptions[0])return;
+  const opt=sel.selectedOptions[0];
+  $('rehab-edad').textContent=opt.dataset.edad||'-'; 
+  $('rehab-sexo').textContent=opt.dataset.sexo||'-'; 
+  $('rehab-fn').textContent=opt.dataset.fn?formatDate(opt.dataset.fn):'-'; 
+  $('rehab-estado').textContent=opt.dataset.estado||'-'; 
+  $('rehab-condicion').textContent=opt.dataset.condicion||'-'; 
 }
 
 async function saveRehab(e){
@@ -1193,120 +1213,136 @@ async function saveRehab(e){
   data.creado_por=currentUser.id;
   let res;
   if(editingId) res=await supabase.from('control_rehabilitacion').update(data).eq('id',editingId);
-  else res=await supabase.from('control_rehabilitacion').insert([data]);
-  if(res.error){showToast(res.error.message,'error');}
-  else{closeModal(); showToast('Control guardado correctamente'); navigate('rehabilitacion');}
+  else res=await supabase.from('control_rehabilitacion').insert([data]).select();
+  if(res.error){showToast(res.error.message,'error');return;}
+
+  // Si es nuevo, crear 15 sesiones vacías
+  if(!editingId && res.data && res.data[0]){
+    const controlId=res.data[0].id;
+    const sesionesVacias=[];
+    for(let i=1;i<=15;i++){
+      sesionesVacias.push({control_id:controlId,terapia_id:null,fisioterapeuta_id:null,fecha:null,hora_inicio:null,hora_fin:null,observaciones:null,evolucion:null,creado_por:currentUser.id});
+    }
+    await supabase.from('sesiones_terapia').insert(sesionesVacias);
+  }
+
+  closeModal(); showToast('Control guardado correctamente'); navigate('rehabilitacion');
 }
 
-// ==================== SESIONES DE TERAPIA ====================
-async function openSesionesModal(controlId){
-  const {data:control}=await supabase.from('control_rehabilitacion').select('*,paciente:paciente_id(nombres,apellidos,numero_historia)').eq('id',controlId).single();
-  const {data:sesiones}=await supabase.from('sesiones_terapia').select('*,terapia:terapia_id(nombre),fisioterapeuta:fisioterapeuta_id(nombres,apellidos)').eq('control_id',controlId).order('fecha').order('hora_inicio');
+// ==================== PLANILLA DE REHABILITACIÓN (15 SESIONES) ====================
+async function openRehabPlanilla(controlId){
+  const {data:control}=await supabase.from('control_rehabilitacion').select('*,paciente:paciente_id(nombres,apellidos,cedula,numero_historia,edad,sexo,fecha_nacimiento,estado:estado_id(nombre),condicion_salud),fisioterapeuta:fisioterapeuta_id(nombres,apellidos)').eq('id',controlId).single();
+  const {data:sesiones}=await supabase.from('sesiones_terapia').select('*,terapia:terapia_id(nombre),fisioterapeuta:fisioterapeuta_id(nombres,apellidos)').eq('control_id',controlId).order('id');
+  const {data:terapias}=await supabase.from('terapias').select('*').eq('activo',true);
+  const {data:fisios}=await supabase.from('fisioterapeutas').select('*').eq('activo',true);
 
   const modal=$('modal-container');
   const content=$('modal-content');
   modal.classList.remove('hidden');
-  content.style.maxWidth='56rem';
+  content.style.maxWidth='72rem';
+  content.style.width='95vw';
 
-  let html=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+  const p=control.paciente||{};
+  const f=control.fisioterapeuta||{};
+
+  // Asegurar 15 sesiones (rellenar si faltan)
+  const ses=[];
+  for(let i=0;i<15;i++){
+    ses.push(sesiones&&sesiones[i]?sesiones[i]:{id:null,terapia_id:'',fisioterapeuta_id:'',fecha:'',hora_inicio:'',hora_fin:'',observaciones:'',evolucion:''});
+  }
+
+  let html=`<div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
     <div>
-      <h3 class="text-lg font-bold text-slate-800">Sesiones de Terapia</h3>
-      <p class="text-sm text-slate-500">${control.paciente?.numero_historia} - ${control.paciente?.nombres} ${control.paciente?.apellidos}</p>
+      <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-clipboard-list text-teal-600 mr-2"></i>Control de Rehabilitación</h3>
+      <p class="text-sm text-slate-500">Planilla de Sesiones de Terapias</p>
     </div>
-    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 px-3 py-1"><i class="fas fa-times text-xl"></i></button>
   </div>
-  <div class="p-6 space-y-4">
-    <div class="flex justify-between items-center">
-      <h4 class="font-semibold text-slate-700">Sesiones registradas: ${sesiones?.length||0}</h4>
-      <button onclick="openAddSesionModal(${controlId})" class="bg-teal-700 hover:bg-teal-800 text-white px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-plus mr-1"></i> Agregar Sesión</button>
+  <div class="p-4 max-h-[80vh] overflow-y-auto">
+    <!-- Datos del Paciente -->
+    <div class="border-2 border-slate-300 rounded-lg p-4 mb-4 bg-white">
+      <h4 class="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide border-b border-slate-200 pb-1">Datos del Paciente</h4>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div><label class="text-xs text-slate-500 block">N° Historia</label><p class="font-mono font-bold text-teal-700">${p.numero_historia||'-'}</p></div>
+        <div><label class="text-xs text-slate-500 block">Nombre</label><p class="font-semibold">${p.nombres||''}</p></div>
+        <div><label class="text-xs text-slate-500 block">Apellido</label><p class="font-semibold">${p.apellidos||''}</p></div>
+        <div><label class="text-xs text-slate-500 block">Cédula</label><p class="font-semibold">${p.cedula||'-'}</p></div>
+        <div><label class="text-xs text-slate-500 block">Edad</label><p class="font-semibold">${p.edad||'-'}</p></div>
+        <div><label class="text-xs text-slate-500 block">Sexo</label><p class="font-semibold">${p.sexo||'-'}</p></div>
+        <div><label class="text-xs text-slate-500 block">Fecha de Nacimiento</label><p class="font-semibold">${formatDate(p.fecha_nacimiento)}</p></div>
+        <div><label class="text-xs text-slate-500 block">Estado</label><p class="font-semibold">${p.estado?.nombre||'-'}</p></div>
+        <div class="col-span-2 md:col-span-4"><label class="text-xs text-slate-500 block">Condición de Salud</label><p class="font-semibold">${p.condicion_salud||'Sin registrar'}</p></div>
+      </div>
     </div>
-    <div class="border rounded-lg overflow-hidden">
-      <table class="w-full text-sm">
-        <thead><tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
-          <th class="text-left px-3 py-2">#</th>
-          <th class="text-left px-3 py-2">Fecha</th>
-          <th class="text-left px-3 py-2">Hora</th>
-          <th class="text-left px-3 py-2">Terapia</th>
-          <th class="text-left px-3 py-2">Terapista</th>
-          <th class="text-left px-3 py-2">Evolución</th>
-          <th class="text-left px-3 py-2">Acciones</th>
-        </tr></thead>
-        <tbody>`;
 
-  (sesiones||[]).forEach((s,i)=>{
-    html+=`<tr class="sesion-row border-b border-slate-100">
-      <td class="px-3 py-2 font-bold text-teal-700">${i+1}</td>
-      <td class="px-3 py-2">${formatDate(s.fecha)}</td>
-      <td class="px-3 py-2">${s.hora_inicio||'-'} ${s.hora_fin?'a '+s.hora_fin:''}</td>
-      <td class="px-3 py-2">${s.terapia?.nombre||'-'}</td>
-      <td class="px-3 py-2">${s.fisioterapeuta?s.fisioterapeuta.nombres+' '+s.fisioterapeuta.apellidos:'-'}</td>
-      <td class="px-3 py-2 max-w-xs truncate">${s.evolucion||'-'}</td>
-      <td class="px-3 py-2">
-        <button onclick="deleteSesion(${s.id},${controlId})" class="text-red-600 hover:text-red-800 p-1"><i class="fas fa-trash"></i></button>
-      </td>
-    </tr>`;
-  });
+    <!-- Sesiones de Terapias -->
+    <div class="border-2 border-slate-300 rounded-lg p-4 bg-white">
+      <h4 class="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide border-b border-slate-200 pb-1">Sesiones de Terapias</h4>
+      <form id="planilla-form" onsubmit="guardarPlanilla(event,${controlId})">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+          ${ses.map((s,idx)=>{
+            const num=idx+1;
+            return `<div class="flex items-center gap-2 py-1.5 border-b border-slate-100 ${idx>=10?'md:col-span-1':''}">
+              <span class="w-6 h-6 bg-teal-700 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">${num}</span>
+              <select name="sesion_${num}_fisioterapeuta_id" class="flex-1 min-w-0 text-xs px-2 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-teal-500 outline-none bg-white">
+                <option value="">Terapista</option>
+                ${(fisios||[]).map(fi=>`<option value="${fi.id}" ${s.fisioterapeuta_id==fi.id?'selected':''}>${fi.nombres} ${fi.apellidos}</option>`).join('')}
+              </select>
+              <select name="sesion_${num}_terapia_id" class="flex-1 min-w-0 text-xs px-2 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-teal-500 outline-none bg-white">
+                <option value="">Terapia</option>
+                ${(terapias||[]).map(t=>`<option value="${t.id}" ${s.terapia_id==t.id?'selected':''}>${t.nombre}</option>`).join('')}
+              </select>
+              <input type="date" name="sesion_${num}_fecha" value="${s.fecha||''}" class="w-28 text-xs px-2 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-teal-500 outline-none">
+              <input type="hidden" name="sesion_${num}_id" value="${s.id||''}">
+            </div>`;
+          }).join('')}
+        </div>
 
-  html+=`</tbody></table>${!sesiones||sesiones.length===0?'<div class="p-4 text-center text-slate-400 text-sm">No hay sesiones registradas</div>':''}</div>
+        <div class="flex flex-wrap justify-center gap-3 mt-6 pt-4 border-t border-slate-200">
+          <button type="button" onclick="closeModal()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium transition"><i class="fas fa-sign-out-alt mr-1"></i>Salir</button>
+          ${userRole==='superadmin'||userRole==='admin'||userRole==='fisioterapeuta'?`
+          <button type="submit" class="px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg font-medium transition"><i class="fas fa-save mr-1"></i>Guardar</button>
+          <button type="button" onclick="nuevoControl()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"><i class="fas fa-file mr-1"></i>Nuevo</button>
+          `:''}
+          <button type="button" onclick="imprimirPlanilla()" class="px-5 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition"><i class="fas fa-print mr-1"></i>Imprimir</button>
+        </div>
+      </form>
+    </div>
   </div>`;
+
   content.innerHTML=html;
 }
 
-async function openAddSesionModal(controlId){
-  const [{data:terapias},{data:fisios}]=await Promise.all([
-    supabase.from('terapias').select('*').eq('activo',true),
-    supabase.from('fisioterapeutas').select('*').eq('activo',true)
-  ]);
-
-  const content=$('modal-content');
-  content.innerHTML=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
-    <h3 class="text-lg font-bold text-slate-800">Agregar Sesión de Terapia</h3>
-    <button onclick="openSesionesModal(${controlId})" class="text-slate-400 hover:text-slate-600"><i class="fas fa-arrow-left mr-1"></i> Volver</button>
-  </div>
-  <form id="sesion-form" class="p-6 space-y-4" onsubmit="saveSesion(event,${controlId})">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Terapia *</label>
-        <select name="terapia_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
-          <option value="">Seleccione...</option>
-          ${(terapias||[]).map(t=>`<option value="${t.id}">${t.nombre} (${t.duracion_minutos} min)</option>`).join('')}
-        </select>
-      </div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Fisioterapeuta *</label>
-        <select name="fisioterapeuta_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
-          <option value="">Seleccione...</option>
-          ${(fisios||[]).map(f=>`<option value="${f.id}">${f.apellidos}, ${f.nombres}</option>`).join('')}
-        </select>
-      </div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha *</label><input type="date" name="fecha" value="${new Date().toISOString().split('T')[0]}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Hora Inicio</label><input type="time" name="hora_inicio" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Hora Fin</label><input type="time" name="hora_fin" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Observaciones</label><textarea name="observaciones" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></textarea></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Evolución / Nota de Terapia</label><textarea name="evolucion" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></textarea></div>
-    </div>
-    <div class="flex justify-end gap-3 pt-4">
-      <button type="button" onclick="openSesionesModal(${controlId})" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
-      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-save mr-1"></i> Guardar Sesión</button>
-    </div>
-  </form>`;
-}
-
-async function saveSesion(e,controlId){
+async function guardarPlanilla(e,controlId){
   e.preventDefault();
   const fd=new FormData(e.target);
-  const data={control_id:controlId};
-  fd.forEach((v,k)=>{ if(v!==''){ if(k.endsWith('_id'))data[k]=parseInt(v)||null; else data[k]=v; } });
-  data.creado_por=currentUser.id;
-  const res=await supabase.from('sesiones_terapia').insert([data]);
-  if(res.error){showToast(res.error.message,'error');}
-  else{showToast('Sesión guardada'); openSesionesModal(controlId);}
+
+  // Procesar 15 sesiones
+  for(let i=1;i<=15;i++){
+    const sesionId=fd.get(`sesion_${i}_id`);
+    const data={
+      control_id:controlId,
+      fisioterapeuta_id:fd.get(`sesion_${i}_fisioterapeuta_id`)||null,
+      terapia_id:fd.get(`sesion_${i}_terapia_id`)||null,
+      fecha:fd.get(`sesion_${i}_fecha`)||null,
+      creado_por:currentUser.id
+    };
+    if(data.fisioterapeuta_id) data.fisioterapeuta_id=parseInt(data.fisioterapeuta_id);
+    if(data.terapia_id) data.terapia_id=parseInt(data.terapia_id);
+
+    if(sesionId){
+      await supabase.from('sesiones_terapia').update(data).eq('id',sesionId);
+    } else if(data.fisioterapeuta_id||data.terapia_id||data.fecha){
+      await supabase.from('sesiones_terapia').insert([data]);
+    }
+  }
+
+  showToast('Planilla guardada correctamente');
+  closeModal(); navigate('rehabilitacion');
 }
 
-async function deleteSesion(id,controlId){
-  if(!confirm('¿Eliminar esta sesión?'))return;
-  await supabase.from('sesiones_terapia').delete().eq('id',id);
-  showToast('Sesión eliminada'); openSesionesModal(controlId);
-}
-
+function nuevoControl(){ closeModal(); openRehabModal(); }
+function imprimirPlanilla(){ window.print(); }
 // ==================== USUARIOS ====================
 async function renderUsuarios(){
   if(userRole!=='superadmin'&&userRole!=='admin'){showToast('Acceso denegado','error');navigate('dashboard');return;}
@@ -1366,8 +1402,8 @@ async function openUsuarioModal(id=null){
   content.style.maxWidth='28rem';
 
   const roles = userRole==='superadmin' 
-    ? [{v:'superadmin',l:'Super Administrador'},{v:'admin',l:'Administrador'},{v:'fisiatra',l:'Fisiatra'},{v:'fisioterapeuta',l:'Fisioterapeuta'},{v:'secretaria',l:'Secretaria'}]
-    : [{v:'admin',l:'Administrador'},{v:'fisiatra',l:'Fisiatra'},{v:'fisioterapeuta',l:'Fisioterapeuta'},{v:'secretaria',l:'Secretaria'}];
+    ? [{v:'superadmin',l:'Super Administrador'},{v:'admin',l:'Administrador'},{v:'fisiatra',l:'Fisiatra'},{v:'fisioterapeuta',l:'Fisioterapeuta'},{v:'asistente_administrativo',l:'Asistente Administrativo'}]
+    : [{v:'admin',l:'Administrador'},{v:'fisiatra',l:'Fisiatra'},{v:'fisioterapeuta',l:'Fisioterapeuta'},{v:'asistente_administrativo',l:'Asistente Administrativo'}];
 
   content.innerHTML=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
     <h3 class="text-lg font-bold text-slate-800">${id?'Editar':'Nuevo'} Usuario</h3>
