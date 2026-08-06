@@ -34,15 +34,16 @@
   tailwind.config={theme:{extend:{colors:{primary:'#0f766e',secondary:'#14b8a6',accent:'#10b981',dark:'#0f172a'}}}};
 </script>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body class="bg-slate-50 text-slate-800">
 
 <!-- ==================== LOGIN ==================== -->
-<div id="login-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-700 to-teal-900 p-4">
+<div id="login-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-700 to-teal-900 p-4" style="background-image: url('https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/sri%20hd.png?raw=true'); background-size: cover; background-position: center; background-repeat: no-repeat;">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 fade-in">
     <div class="text-center mb-8">
-      <div class="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <i class="fas fa-heart-pulse text-4xl text-teal-700"></i>
+      <div class="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
+        <img src="https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/S%C3%ADmbolo_de_la_Fisioterapia-TRAS.png?raw=true" alt="Símbolo Fisioterapia" class="w-16 h-16 object-contain">
       </div>
       <h1 class="text-2xl font-bold text-slate-800">Sala de Rehabilitación</h1>
       <p class="text-slate-500 text-sm mt-1">Leoncio Páez - San Fernando, Apure</p>
@@ -71,9 +72,8 @@
       </button>
     </form>
     <div id="login-error" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm text-center"></div>
-    <div class="mt-6 text-center text-xs text-slate-400">
-      <p>Ministerio del Poder Popular para la Salud</p>
-      <p>Misión Barrio Adentro - Venezuela</p>
+    <div class="mt-6 text-center">
+      <img src="https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/CINT.png?raw=true" alt="MPPS - Misión Barrio Adentro" class="mx-auto h-14 object-contain">
     </div>
   </div>
 </div>
@@ -192,8 +192,8 @@
 
 // ==================== CONFIGURACIÓN SUPABASE ====================
 // REEMPLAZAR con tus credenciales de Supabase
-const SUPABASE_URL = 'https://guwsjhryhmnzralvkyms.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_Nc1B8YSCxh3zymfrqmyx9A_GyL6CMHP';
+const SUPABASE_URL = 'https://TU_PROYECTO.supabase.co';
+const SUPABASE_ANON_KEY = 'TU_ANON_KEY';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -219,6 +219,25 @@ function formatDateTime(d){ if(!d)return'-'; const x=new Date(d); return x.toLoc
 function escapeHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
 function togglePassword(){ const p=$('login-password'),i=p.nextElementSibling.querySelector('i'); if(p.type==='password'){p.type='text';i.className='fas fa-eye-slash';}else{p.type='password';i.className='fas fa-eye';} }
 function toggleSidebar(){ $('sidebar').classList.toggle('-translate-x-full'); }
+
+// ==================== BLOQUEO POR INTENTOS ====================
+function getBlockKey(email){ return `sri_block_${email.toLowerCase().trim()}`; }
+function getLoginAttempts(email){
+  try{ const d=localStorage.getItem(getBlockKey(email)); return d?JSON.parse(d):{count:0,blocked:false}; }
+  catch(e){ return {count:0,blocked:false}; }
+}
+function recordFailedAttempt(email){
+  const key=getBlockKey(email);
+  let d=getLoginAttempts(email);
+  d.count++; d.lastAttempt=new Date().toISOString();
+  if(d.count>=3){ d.blocked=true; }
+  localStorage.setItem(key,JSON.stringify(d));
+  return d.blocked;
+}
+function isBlocked(email){ return getLoginAttempts(email).blocked; }
+function unblockEmail(email){ localStorage.removeItem(getBlockKey(email)); }
+function getBlockCount(email){ return getLoginAttempts(email).count; }
+
 
 // ==================== AUTH ====================
 async function init(){
@@ -263,11 +282,33 @@ function hideNav(ids){ ids.forEach(id=>{ const el=$(`nav-${id}`); if(el)el.class
 $('login-form').addEventListener('submit', async (e)=>{
   e.preventDefault();
   $('login-error').classList.add('hidden');
-  const email=$('login-email').value;
+  const email=$('login-email').value.trim();
   const password=$('login-password').value;
+
+  // Verificar si la cuenta está bloqueada por intentos fallidos
+  if(isBlocked(email)){
+    $('login-error').textContent='Cuenta bloqueada por múltiples intentos fallidos. Contacte al administrador.';
+    $('login-error').classList.remove('hidden');
+    return;
+  }
+
   const {data,error}=await supabase.auth.signInWithPassword({email,password});
-  if(error){ $('login-error').textContent=error.message; $('login-error').classList.remove('hidden'); }
-  else { await loadUser(data.user); }
+  if(error){
+    const attempts=getLoginAttempts(email);
+    if(attempts.count>=2){ // Este es el 3er intento fallido (0,1,2 -> 3)
+      recordFailedAttempt(email);
+      $('login-error').textContent='Cuenta bloqueada por múltiples intentos fallidos. Contacte al administrador.';
+    } else {
+      recordFailedAttempt(email);
+      $('login-error').textContent=`Credenciales incorrectas. Intento ${attempts.count+1} de 3.`;
+    }
+    $('login-error').classList.remove('hidden');
+  }
+  else {
+    // Login exitoso: limpiar contador de intentos
+    unblockEmail(email);
+    await loadUser(data.user);
+  }
 });
 
 async function logout(){ await supabase.auth.signOut(); currentUser=null; userRole=null; showLogin(); }
@@ -606,15 +647,15 @@ async function openPacienteModal(id=null){
           ${(medicos||[]).map(m=>`<option value="${m.id}" ${data.medico_referido_id==m.id?'selected':''}>${m.nombres} ${m.apellidos}</option>`).join('')}
         </select>
       </div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Fisioterapeuta Asignado</label>
+      ${userRole!=='asistente_administrativo'?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Fisioterapeuta Asignado</label>
         <select name="fisioterapeuta_asignado_id" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
           <option value="">Seleccione...</option>
           ${(fisios||[]).map(f=>`<option value="${f.id}" ${data.fisioterapeuta_asignado_id==f.id?'selected':''}>${f.nombres} ${f.apellidos}</option>`).join('')}
         </select>
-      </div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha de Ingreso</label><input type="date" name="fecha_ingreso" value="${data.fecha_ingreso||new Date().toISOString().split('T')[0]}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Condición de Salud</label><textarea name="condicion_salud" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.condicion_salud||''}</textarea></div>
-      <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Diagnóstico</label><textarea name="diagnostico" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.diagnostico||''}</textarea></div>
+      </div>`:''}
+      ${userRole!=='asistente_administrativo'?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha de Ingreso</label><input type="date" name="fecha_ingreso" value="${data.fecha_ingreso||new Date().toISOString().split('T')[0]}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>`:''}
+      ${userRole!=='asistente_administrativo'?`<div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Condición de Salud</label><textarea name="condicion_salud" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.condicion_salud||''}</textarea></div>`:''}
+      ${userRole!=='asistente_administrativo'?`<div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Diagnóstico</label><textarea name="diagnostico" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">${data.diagnostico||''}</textarea></div>`:''}
     </div>
     <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
       <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
@@ -929,7 +970,7 @@ async function openCitaModal(id=null){
         </select>
       </div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Fecha *</label><input type="date" name="fecha" value="${data.fecha||new Date().toISOString().split('T')[0]}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Hora *</label><input type="time" name="hora" value="${data.hora||'08:00'}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
+      <div><label class="block text-sm font-medium text-slate-700 mb-1">Hora *</label><input type="time" name="hora" value="${data.hora||'07:00'}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       <div class="md:col-span-2"><label class="block text-sm font-medium text-slate-700 mb-1">Motivo</label><input type="text" name="motivo" value="${data.motivo||''}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Estado</label>
         <select name="estado" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
@@ -1348,7 +1389,9 @@ async function renderUsuarios(){
   if(userRole!=='superadmin'&&userRole!=='admin'){showToast('Acceso denegado','error');navigate('dashboard');return;}
   const area=$('content-area');
   area.innerHTML='<div class="flex items-center justify-center h-64"><i class="fas fa-circle-notch fa-spin text-3xl text-teal-600"></i></div>';
-  const {data:usuarios,error}=await supabase.from('profiles').select('*').order('created_at',{ascending:false});
+  let userQuery=supabase.from('profiles').select('*').order('created_at',{ascending:false});
+  if(userRole==='admin'){ userQuery=userQuery.neq('rol','superadmin'); }
+  const {data:usuarios,error}=await userQuery;
   if(error){showToast(error.message,'error');return;}
 
   let html=`<div class="fade-in">
@@ -1367,6 +1410,7 @@ async function renderUsuarios(){
             <th class="text-left px-4 py-3 font-semibold">Email</th>
             <th class="text-left px-4 py-3 font-semibold">Rol</th>
             <th class="text-left px-4 py-3 font-semibold">Activo</th>
+            <th class="text-left px-4 py-3 font-semibold">Bloqueo</th>
             <th class="text-left px-4 py-3 font-semibold">Acciones</th>
           </tr></thead>
           <tbody>`;
@@ -1378,9 +1422,11 @@ async function renderUsuarios(){
       <td class="px-4 py-3">${u.email||'-'}</td>
       <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${u.rol==='superadmin'?'bg-purple-100 text-purple-700':(u.rol==='admin'?'bg-blue-100 text-blue-700':(u.rol==='fisiatra'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-700'))}">${u.rol}</span></td>
       <td class="px-4 py-3">${u.activo?'<span class="text-green-600"><i class="fas fa-check"></i></span>':'<span class="text-red-400"><i class="fas fa-times"></i></span>'}</td>
+      <td class="px-4 py-3">${isBlocked(u.email||'')?'<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700" title="Bloqueado por 3 intentos fallidos"><i class="fas fa-lock mr-1"></i>Bloqueado</span>':'<span class="text-slate-300">-</span>'}</td>
       <td class="px-4 py-3">
         <div class="flex items-center gap-1">
           <button onclick="openUsuarioModal('${u.id}')" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition" title="Editar"><i class="fas fa-edit"></i></button>
+          ${isBlocked(u.email||'')?`<button onclick="desbloquearUsuario('${u.email||''}')" class="text-amber-600 hover:bg-amber-50 p-2 rounded-lg transition" title="Desbloquear acceso"><i class="fas fa-unlock"></i></button>`:''}
           ${userRole==='superadmin'?`<button onclick="deleteUsuario('${u.id}')" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="Eliminar"><i class="fas fa-trash"></i></button>`:''}
         </div>
       </td>
@@ -1479,6 +1525,15 @@ async function deleteUsuario(id){
   });
   if(!res.ok){showToast('Error eliminando usuario','error');return;}
   showToast('Usuario eliminado'); navigate('usuarios');
+}
+
+
+async function desbloquearUsuario(email){
+  if(!email){ showToast('Email no disponible','error'); return; }
+  if(!confirm('¿Desbloquear el acceso para '+email+'?'))return;
+  unblockEmail(email);
+  showToast('Usuario desbloqueado. Puede intentar ingresar nuevamente.');
+  navigate('usuarios');
 }
 
 // ==================== AUDITORÍA ====================
