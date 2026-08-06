@@ -26,6 +26,19 @@
   ::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:4px;}
   ::-webkit-scrollbar-thumb:hover{background:#64748b;}
 
+  /* Ocultar ojo nativo del navegador en inputs password */
+  input[type="password"]::-ms-reveal,
+  input[type="password"]::-ms-clear{
+    display: none;
+  }
+  input[type="password"]::-webkit-credentials-auto-fill-button{
+    visibility: hidden;
+    display: none !important;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
+
   .sidebar-link{background:none;border:none;color:inherit;cursor:pointer;font-family:inherit;font-size:inherit;width:100%;text-align:left;}
   .sidebar-link:focus{outline:none;}
 
@@ -34,15 +47,16 @@
   tailwind.config={theme:{extend:{colors:{primary:'#0f766e',secondary:'#14b8a6',accent:'#10b981',dark:'#0f172a'}}}};
 </script>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body class="bg-slate-50 text-slate-800">
 
 <!-- ==================== LOGIN ==================== -->
-<div id="login-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-700 to-teal-900 p-4">
+<div id="login-screen" class="min-h-screen flex items-center justify-center p-4" style="background-image: url('https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/sri%20hd.png?raw=true'); background-size: cover; background-position: center;">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 fade-in">
     <div class="text-center mb-8">
-      <div class="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <i class="fas fa-heart-pulse text-4xl text-teal-700"></i>
+      <div class="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden bg-white shadow-lg">
+        <img src="https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/S%C3%ADmbolo_de_la_Fisioterapia-TRAS.png?raw=true" alt="Símbolo Fisioterapia" class="w-full h-full object-contain p-1">
       </div>
       <h1 class="text-2xl font-bold text-slate-800">Sala de Rehabilitación</h1>
       <p class="text-slate-500 text-sm mt-1">Leoncio Páez - San Fernando, Apure</p>
@@ -71,9 +85,8 @@
       </button>
     </form>
     <div id="login-error" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm text-center"></div>
-    <div class="mt-6 text-center text-xs text-slate-400">
-      <p>Ministerio del Poder Popular para la Salud</p>
-      <p>Misión Barrio Adentro - Venezuela</p>
+    <div class="mt-6 text-center">
+      <img src="https://github.com/ambulatorioruralpuertomiranda-eng/sri-rehabilitacion-leoncio-paez/blob/main/imagenes/CINT.png?raw=true" alt="Ministerio del Poder Popular para la Salud - Misión Barrio Adentro" class="mx-auto max-h-16 object-contain">
     </div>
   </div>
 </div>
