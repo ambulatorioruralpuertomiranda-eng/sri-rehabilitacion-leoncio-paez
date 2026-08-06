@@ -35,6 +35,7 @@
 </script>
 <base target="_blank">
 <base target="_blank">
+<base target="_blank">
 </head>
 <body class="bg-slate-50 text-slate-800">
 
@@ -65,7 +66,7 @@
           <input type="checkbox" id="remember-me" class="rounded text-teal-600 focus:ring-teal-500">
           <span class="text-slate-600">Recordarme</span>
         </label>
-        <a href="javascript:void(0)" onclick="alert('Contacte al administrador del sistema')" class="text-teal-600 hover:underline">¿Olvidó contraseña?</a>
+        <a href="javascript:void(0)" onclick="showForgotPasswordModal()" class="text-teal-600 hover:underline">¿Olvidó contraseña?</a>
       </div>
       <button type="submit" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-3 rounded-lg transition shadow-lg shadow-teal-700/30">
         <i class="fas fa-sign-in-alt mr-2"></i>Ingresar al Sistema
@@ -194,7 +195,9 @@
 // REEMPLAZAR con tus credenciales de Supabase
 const SUPABASE_URL = 'https://guwsjhryhmnzralvkyms.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Nc1B8YSCxh3zymfrqmyx9A_GyL6CMHP';
+
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // Variables globales
 let currentUser = null;
 let userRole = null;
@@ -219,27 +222,59 @@ function togglePassword(){ const p=$('login-password'),i=p.nextElementSibling.qu
 function toggleSidebar(){ $('sidebar').classList.toggle('-translate-x-full'); }
 
 // ==================== BLOQUEO POR INTENTOS ====================
+const BLOCK_MAX_ATTEMPTS = 3;
+const BLOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutos de bloqueo
+
 function getBlockKey(email){ return `sri_block_${email.toLowerCase().trim()}`; }
 function getLoginAttempts(email){
-  try{ const d=localStorage.getItem(getBlockKey(email)); return d?JSON.parse(d):{count:0,blocked:false}; }
-  catch(e){ return {count:0,blocked:false}; }
+  try{ const d=localStorage.getItem(getBlockKey(email)); return d?JSON.parse(d):{count:0,blocked:false,lastAttempt:null}; }
+  catch(e){ return {count:0,blocked:false,lastAttempt:null}; }
 }
 function recordFailedAttempt(email){
   const key=getBlockKey(email);
   let d=getLoginAttempts(email);
-  d.count++; d.lastAttempt=new Date().toISOString();
-  if(d.count>=3){ d.blocked=true; }
-  localStorage.setItem(key,JSON.stringify(d));
+  d.count = (d.count || 0) + 1;
+  d.lastAttempt = new Date().toISOString();
+  if(d.count >= BLOCK_MAX_ATTEMPTS){ d.blocked = true; }
+  localStorage.setItem(key, JSON.stringify(d));
   return d.blocked;
 }
-function isBlocked(email){ return getLoginAttempts(email).blocked; }
+function isBlocked(email){
+  const d = getLoginAttempts(email);
+  if(!d.blocked) return false;
+  // Auto-desbloqueo después de 15 minutos
+  if(d.lastAttempt){
+    const elapsed = Date.now() - new Date(d.lastAttempt).getTime();
+    if(elapsed > BLOCK_DURATION_MS){ unblockEmail(email); return false; }
+  }
+  return true;
+}
 function unblockEmail(email){ localStorage.removeItem(getBlockKey(email)); }
 function getBlockCount(email){ return getLoginAttempts(email).count; }
+
+// Verifica si un email pertenece a superadmin (consulta pública limitada)
+async function isSuperAdminEmail(email){
+  try{
+    const {data,error} = await supabase.from('profiles').select('rol').eq('email',email).single();
+    if(error) return false;
+    return data && data.rol === 'superadmin';
+  }catch(e){ return false; }
+}
 
 
 // ==================== AUTH ====================
 async function init(){
   $('current-date').textContent=new Date().toLocaleDateString('es-VE',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Detectar token de recuperación de contraseña en URL (#access_token=...&type=recovery)
+  const hash = window.location.hash;
+  if(hash && (hash.includes('type=recovery') || hash.includes('access_token='))){
+    showLogin();
+    // Limpiar hash visualmente pero mantener token para supabase
+    setTimeout(()=> showResetPasswordModal(), 300);
+    return;
+  }
+
   const {data:{session}}=await supabase.auth.getSession();
   if(session){ await loadUser(session.user); }
   else{ showLogin(); }
@@ -250,8 +285,25 @@ function showApp(){ $('login-screen').classList.add('hidden'); $('app-screen').c
 
 async function loadUser(user){
   currentUser=user;
-  const {data:profile}=await supabase.from('profiles').select('*').eq('id',user.id).single();
-  if(!profile||!profile.activo){ showToast('Usuario inactivo o no encontrado','error'); await supabase.auth.signOut(); showLogin(); return; }
+  const {data:profile, error:profileError}=await supabase.from('profiles').select('*').eq('id',user.id).single();
+
+  if(profileError || !profile){
+    showToast('Usuario autenticado pero no tiene perfil en el sistema. Contacte al administrador.','error');
+    await supabase.auth.signOut();
+    showLogin();
+    $('login-error').textContent = 'Su cuenta no tiene perfil activo en el sistema. Contacte al administrador.';
+    $('login-error').classList.remove('hidden');
+    return;
+  }
+  if(!profile.activo){
+    showToast('Usuario inactivo. Contacte al administrador.','error');
+    await supabase.auth.signOut();
+    showLogin();
+    $('login-error').textContent = 'Su cuenta está inactiva. Contacte al administrador.';
+    $('login-error').classList.remove('hidden');
+    return;
+  }
+
   userRole=profile.rol;
   $('user-name').textContent=`${profile.nombres} ${profile.apellidos}`;
   $('user-role').textContent=profile.rol.toUpperCase();
@@ -283,27 +335,30 @@ $('login-form').addEventListener('submit', async (e)=>{
   const email=$('login-email').value.trim();
   const password=$('login-password').value;
 
-  // Verificar si la cuenta está bloqueada por intentos fallidos
-  if(isBlocked(email)){
-    $('login-error').textContent='Cuenta bloqueada por múltiples intentos fallidos. Contacte al administrador.';
-    $('login-error').classList.remove('hidden');
-    return;
-  }
-
+  // Siempre intentar login primero (no bloquear antes de validar credenciales correctas)
   const {data,error}=await supabase.auth.signInWithPassword({email,password});
+
   if(error){
-    const attempts=getLoginAttempts(email);
-    if(attempts.count>=2){ // Este es el 3er intento fallido (0,1,2 -> 3)
-      recordFailedAttempt(email);
-      $('login-error').textContent='Cuenta bloqueada por múltiples intentos fallidos. Contacte al administrador.';
+    // Verificar si es superadmin antes de registrar intento fallido
+    const superAdmin = await isSuperAdminEmail(email);
+    if(superAdmin){
+      $('login-error').textContent='Credenciales incorrectas. Su cuenta de superadministrador nunca será bloqueada por intentos fallidos.';
+      $('login-error').classList.remove('hidden');
+      return;
+    }
+
+    const blocked = recordFailedAttempt(email);
+    const attempts = getLoginAttempts(email);
+    if(blocked){
+      $('login-error').textContent=`Cuenta bloqueada temporalmente por ${BLOCK_MAX_ATTEMPTS} intentos fallidos. Espere 15 minutos o contacte al administrador.`;
     } else {
-      recordFailedAttempt(email);
-      $('login-error').textContent=`Credenciales incorrectas. Intento ${attempts.count+1} de 3.`;
+      const restantes = BLOCK_MAX_ATTEMPTS - attempts.count;
+      $('login-error').textContent=`Credenciales incorrectas. Intento ${attempts.count} de ${BLOCK_MAX_ATTEMPTS}. ${restantes} intento(s) restante(s).`;
     }
     $('login-error').classList.remove('hidden');
   }
   else {
-    // Login exitoso: limpiar contador de intentos
+    // Login exitoso: siempre limpiar contador de intentos y proceder
     unblockEmail(email);
     await loadUser(data.user);
   }
@@ -1568,6 +1623,118 @@ async function renderAuditoria(){
 
   html+=`</tbody></table></div>${!logs||logs.length===0?'<div class="p-8 text-center text-slate-400">Sin registros</div>':''}</div></div>`;
   area.innerHTML=html;
+}
+
+
+// ==================== RECUPERACIÓN DE CONTRASEÑA ====================
+function showForgotPasswordModal(){
+  const modal=$('modal-container');
+  const content=$('modal-content');
+  modal.classList.remove('hidden');
+  content.style.maxWidth='28rem';
+  content.innerHTML=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800">Recuperar Contraseña</h3>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <form onsubmit="handleForgotPassword(event)" class="p-6 space-y-4">
+    <p class="text-sm text-slate-600">Ingrese su correo electrónico registrado en el sistema. Se enviará un enlace seguro para restablecer su contraseña.</p>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
+      <input type="email" id="forgot-email" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="usuario@ejemplo.com">
+    </div>
+    <div id="forgot-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div id="forgot-success" class="hidden text-sm text-green-600 bg-green-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-paper-plane mr-1"></i> Enviar Enlace</button>
+    </div>
+  </form>`;
+}
+
+async function handleForgotPassword(e){
+  e.preventDefault();
+  const email=$('forgot-email').value.trim();
+  const errDiv=$('forgot-error');
+  const succDiv=$('forgot-success');
+  errDiv.classList.add('hidden');
+  succDiv.classList.add('hidden');
+
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{
+    redirectTo: window.location.origin + window.location.pathname
+  });
+
+  if(error){
+    errDiv.textContent=error.message;
+    errDiv.classList.remove('hidden');
+  } else {
+    succDiv.textContent='Enlace de recuperación enviado. Revise su correo (incluyendo spam). El enlace expira en 1 hora. Si no recibe el correo, contacte al administrador para que le genere una contraseña temporal.';
+    succDiv.classList.remove('hidden');
+    $('forgot-email').disabled=true;
+  }
+}
+
+function showResetPasswordModal(){
+  const modal=$('modal-container');
+  const content=$('modal-content');
+  modal.classList.remove('hidden');
+  content.style.maxWidth='28rem';
+  content.innerHTML=`<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800">Establecer Nueva Contraseña</h3>
+  </div>
+  <form onsubmit="handleResetPassword(event)" class="p-6 space-y-4">
+    <p class="text-sm text-slate-600">Ha recibido un enlace de recuperación. Ingrese su nueva contraseña para continuar.</p>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Nueva Contraseña *</label>
+      <input type="password" id="new-password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Mínimo 6 caracteres">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Confirmar Contraseña *</label>
+      <input type="password" id="confirm-password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Repita la contraseña">
+    </div>
+    <div id="reset-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div id="reset-success" class="hidden text-sm text-green-600 bg-green-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-save mr-1"></i> Guardar y Entrar</button>
+    </div>
+  </form>`;
+}
+
+async function handleResetPassword(e){
+  e.preventDefault();
+  const newPass=$('new-password').value;
+  const confirmPass=$('confirm-password').value;
+  const errDiv=$('reset-error');
+  const succDiv=$('reset-success');
+  errDiv.classList.add('hidden');
+  succDiv.classList.add('hidden');
+
+  if(newPass!==confirmPass){
+    errDiv.textContent='Las contraseñas no coinciden.';
+    errDiv.classList.remove('hidden');
+    return;
+  }
+  if(newPass.length<6){
+    errDiv.textContent='La contraseña debe tener al menos 6 caracteres.';
+    errDiv.classList.remove('hidden');
+    return;
+  }
+
+  const {data,error}=await supabase.auth.updateUser({password:newPass});
+  if(error){
+    errDiv.textContent=error.message;
+    errDiv.classList.remove('hidden');
+  } else {
+    succDiv.textContent='Contraseña actualizada correctamente. Ahora puede iniciar sesión con su nueva contraseña.';
+    succDiv.classList.remove('hidden');
+    // Limpiar hash de URL
+    history.replaceState(null, null, window.location.pathname + window.location.search);
+    setTimeout(()=>{
+      closeModal();
+      $('login-email').value = data.user.email || '';
+      $('login-password').value = '';
+      $('login-password').focus();
+    }, 2500);
+  }
 }
 
 // ==================== INICIALIZAR ====================
