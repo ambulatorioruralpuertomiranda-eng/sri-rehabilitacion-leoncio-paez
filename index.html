@@ -57,7 +57,6 @@
   tailwind.config={theme:{extend:{colors:{primary:'#0f766e',secondary:'#14b8a6',accent:'#10b981',dark:'#0f172a'}}}};
 </script>
 <base target="_blank">
-<base target="_blank">
 </head>
 <body class="bg-slate-50 text-slate-800">
 
@@ -246,6 +245,20 @@ function toggleSidebar(){ $('sidebar').classList.toggle('-translate-x-full'); }
 // ==================== AUTH ====================
 async function init(){
   $('current-date').textContent=new Date().toLocaleDateString('es-VE',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Detectar si venimos de un email de recuperación de Supabase (type=recovery)
+  const urlParams = new URLSearchParams(window.location.search);
+  const recoveryType = urlParams.get('type');
+  const recoveryCode = urlParams.get('code');
+
+  if(recoveryType === 'recovery' && recoveryCode){
+    // Limpiar URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Mostrar formulario de nueva contraseña
+    showRecoveryPasswordForm(recoveryCode);
+    return;
+  }
+
   const {data:{session}}=await supabase.auth.getSession();
   if(session){ await loadUser(session.user); }
   else{ showLogin(); }
@@ -1372,8 +1385,17 @@ async function renderUsuarios(){
   if(userRole!=='superadmin'&&userRole!=='admin'){showToast('Acceso denegado','error');navigate('dashboard');return;}
   const area=$('content-area');
   area.innerHTML='<div class="flex items-center justify-center h-64"><i class="fas fa-circle-notch fa-spin text-3xl text-teal-600"></i></div>';
-  const {data:usuarios,error}=await supabase.from('profiles').select('*').order('created_at',{ascending:false});
+
+  // Consultar usuarios y restablecimientos recientes (últimas 24h)
+  const [{data:usuarios,error},{data:recentResets}] = await Promise.all([
+    supabase.from('profiles').select('*').order('created_at',{ascending:false}),
+    supabase.from('password_resets').select('user_id,created_at').eq('used',true).gt('created_at', new Date(Date.now()-86400000).toISOString())
+  ]);
+
   if(error){showToast(error.message,'error');return;}
+
+  // Crear set de IDs con restablecimiento reciente
+  const resetIds = new Set((recentResets||[]).map(r=>r.user_id));
 
   let html=`<div class="fade-in">
     <div class="flex items-center justify-between mb-6">
@@ -1400,7 +1422,10 @@ async function renderUsuarios(){
       <td class="px-4 py-3">${u.cedula}</td>
       <td class="px-4 py-3">${u.nombres} ${u.apellidos}</td>
       <td class="px-4 py-3">${u.email||'-'}</td>
-      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs ${u.rol==='superadmin'?'bg-purple-100 text-purple-700':(u.rol==='admin'?'bg-blue-100 text-blue-700':(u.rol==='fisiatra'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-700'))}">${u.rol}</span></td>
+      <td class="px-4 py-3">
+        <span class="px-2 py-0.5 rounded-full text-xs ${u.rol==='superadmin'?'bg-purple-100 text-purple-700':(u.rol==='admin'?'bg-blue-100 text-blue-700':(u.rol==='fisiatra'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-700'))}">${u.rol}</span>
+        ${resetIds.has(u.id)?'<span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600" title="Solicitó restablecimiento de contraseña recientemente"><i class="fas fa-key"></i></span>':''}
+      </td>
       <td class="px-4 py-3">${u.activo?'<span class="text-green-600"><i class="fas fa-check"></i></span>':'<span class="text-red-400"><i class="fas fa-times"></i></span>'}</td>
       <td class="px-4 py-3">
         <div class="flex items-center gap-1">
@@ -1418,7 +1443,21 @@ async function renderUsuarios(){
 async function openUsuarioModal(id=null){
   editingId=id;
   let data={};
-  if(id){ const r=await supabase.from('profiles').select('*').eq('id',id).single(); data=r.data||{}; }
+  let hasRecentReset = false;
+  if(id){ 
+    const r=await supabase.from('profiles').select('*').eq('id',id).single(); 
+    data=r.data||{}; 
+    // Verificar si tiene restablecimiento reciente
+    const {data:resetData} = await supabase.from('password_resets')
+      .select('id,created_at')
+      .eq('user_id',id)
+      .eq('used',true)
+      .gt('created_at', new Date(Date.now()-86400000).toISOString())
+      .order('created_at',{ascending:false})
+      .limit(1)
+      .single();
+    hasRecentReset = !!resetData;
+  }
 
   const modal=$('modal-container');
   const content=$('modal-content');
@@ -1434,6 +1473,18 @@ async function openUsuarioModal(id=null){
     <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
   </div>
   <form id="modal-form" class="p-6 space-y-4" onsubmit="saveUsuario(event)">
+    ${id && hasRecentReset?`<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+      <div class="flex items-start gap-2">
+        <i class="fas fa-exclamation-triangle text-amber-500 mt-0.5"></i>
+        <div>
+          <p class="font-semibold text-amber-800">Restablecimiento de contraseña solicitado</p>
+          <p class="text-amber-700 text-xs mt-1">Este usuario verificó su identidad recientemente y solicitó restablecer su contraseña.</p>
+          <button type="button" onclick="sendRecoveryEmail('${data.email}')" class="mt-2 text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded transition">
+            <i class="fas fa-envelope mr-1"></i>Enviar email de recuperación
+          </button>
+        </div>
+      </div>
+    </div>`:''}
     <div class="grid grid-cols-1 gap-4">
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Cédula *</label><input type="text" name="cedula" value="${data.cedula||''}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       <div class="grid grid-cols-2 gap-4">
@@ -1592,6 +1643,93 @@ async function renderAuditoria(){
   area.innerHTML=html;
 }
 
+
+
+// ==================== RECUPERACIÓN VÍA EMAIL DE SUPABASE ====================
+async function showRecoveryPasswordForm(recoveryCode){
+  showLogin();
+  const modal = $('modal-container');
+  const content = $('modal-content');
+  modal.classList.remove('hidden');
+  content.style.maxWidth = '24rem';
+
+  content.innerHTML = `<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-key text-teal-600 mr-2"></i>Restablecer Contraseña</h3>
+    <button onclick="closeModal(); showLogin();" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <form id="recovery-form" class="p-6 space-y-4" onsubmit="submitRecoveryPassword(event,'${recoveryCode}')">
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+      <i class="fas fa-info-circle mr-1"></i> Ha recibido un enlace de recuperación. Establezca su nueva contraseña para continuar.
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Nueva Contraseña *</label>
+      <input type="password" name="new_password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Mínimo 6 caracteres">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Confirmar Contraseña *</label>
+      <input type="password" name="confirm_password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Repita la contraseña">
+    </div>
+    <div id="recovery-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="button" onclick="closeModal(); showLogin();" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-save mr-1"></i> Guardar Contraseña</button>
+    </div>
+  </form>`;
+}
+
+async function submitRecoveryPassword(e, code){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const newPass = fd.get('new_password');
+  const confirmPass = fd.get('confirm_password');
+  const errorDiv = $('recovery-error');
+  errorDiv.classList.add('hidden');
+
+  if(newPass !== confirmPass){
+    errorDiv.textContent = 'Las contraseñas no coinciden.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  // Intercambiar el código de recuperación por una sesión
+  const {data, error} = await supabase.auth.exchangeCodeForSession(code);
+  if(error){
+    errorDiv.textContent = 'El enlace de recuperación ha expirado o es inválido. Solicite uno nuevo.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  // Actualizar contraseña
+  const {error:updateError} = await supabase.auth.updateUser({password: newPass});
+  if(updateError){
+    errorDiv.textContent = 'Error actualizando contraseña: ' + updateError.message;
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  closeModal();
+  showToast('Contraseña actualizada correctamente. Ahora puede iniciar sesión con su nueva contraseña.');
+
+  // Cerrar sesión de recuperación y mostrar login
+  await supabase.auth.signOut();
+  showLogin();
+}
+
+
+async function sendRecoveryEmail(email){
+  if(!email){ showToast('No se encontró el email del usuario','error'); return; }
+  if(!confirm(`¿Enviar email de recuperación de contraseña a ${email}?`)) return;
+
+  const {error} = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href.split('?')[0]
+  });
+
+  if(error){
+    showToast('Error enviando email: ' + error.message, 'error');
+  } else {
+    showToast('Email de recuperación enviado correctamente a ' + email, 'success');
+  }
+}
 
 // ==================== RECUPERACIÓN DE CONTRASEÑA ====================
 let resetUserId = null;
@@ -1816,7 +1954,7 @@ async function changePassword(e){
     return;
   }
 
-  // Intentar cambiar contraseña via Edge Function
+  // PASO 1: Intentar cambiar contraseña via Edge Function
   try{
     const {data:{session}} = await supabase.auth.getSession();
     const token = session ? session.access_token : '';
@@ -1835,15 +1973,43 @@ async function changePassword(e){
       return;
     }
 
-    // Si falla la Edge Function, intentar método alternativo
     const result = await res.json();
     throw new Error(result.error || 'Error en el servidor');
 
-  } catch(err){
-    // Método alternativo: mostrar instrucciones al admin
-    errorDiv.innerHTML = `<strong>No se pudo cambiar automáticamente.</strong><br>
-      Contacte al administrador del sistema para que restablezca la contraseña manualmente desde el panel de Usuarios.<br>
-      <span class="text-xs text-slate-500">Error: ${err.message}</span>`;
+  } catch(efError){
+    // PASO 2: Si falla Edge Function, intentar enviar email de recuperación nativo de Supabase
+    try{
+      const {data:profile} = await supabase.from('profiles').select('email').eq('id', resetUserId).single();
+      if(profile && profile.email){
+        const {error:resetError} = await supabase.auth.resetPasswordForEmail(profile.email, {
+          redirectTo: window.location.href.split('?')[0]
+        });
+
+        if(!resetError){
+          closeModal();
+          showToast('Se ha enviado un correo de recuperación. Por favor revise su bandeja de entrada y siga las instrucciones.', 'info');
+          resetUserId = null;
+          resetCodeVerified = false;
+          return;
+        }
+      }
+    } catch(emailErr){ /* continuar al fallback final */ }
+
+    // PASO 3: Fallback final - instrucciones manuales
+    errorDiv.innerHTML = `<div class="text-center">
+      <div class="mb-3"><i class="fas fa-envelope text-3xl text-amber-500"></i></div>
+      <strong class="text-amber-700 block mb-2">No se pudo cambiar automáticamente</strong>
+      <p class="text-sm text-slate-600 mb-3">Su identidad fue verificada correctamente, pero el sistema no pudo actualizar la contraseña automáticamente.</p>
+      <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left text-sm">
+        <p class="font-semibold text-amber-800 mb-1">Opciones:</p>
+        <ol class="list-decimal list-inside space-y-1 text-amber-700">
+          <li>Contacte al administrador del sistema</li>
+          <li>Indíquele su email: <strong>${profile?.email || 'registrado'}</strong></li>
+          <li>El admin puede restablecer su contraseña desde el panel de <strong>Usuarios del Sistema</strong></li>
+        </ol>
+      </div>
+      <p class="text-xs text-slate-400 mt-3">Error técnico: ${efError.message}</p>
+    </div>`;
     errorDiv.classList.remove('hidden');
   }
 }
