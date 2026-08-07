@@ -88,7 +88,7 @@
           <input type="checkbox" id="remember-me" class="rounded text-teal-600 focus:ring-teal-500">
           <span class="text-slate-600">Recordarme</span>
         </label>
-        <a href="javascript:void(0)" onclick="alert('Contacte al administrador del sistema')" class="text-teal-600 hover:underline">¿Olvidó contraseña?</a>
+        <a href="javascript:void(0)" onclick="openPasswordResetModal()" class="text-teal-600 hover:underline">¿Olvidó contraseña?</a>
       </div>
       <button type="submit" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-3 rounded-lg transition shadow-lg shadow-teal-700/30">
         <i class="fas fa-sign-in-alt mr-2"></i>Ingresar al Sistema
@@ -1449,6 +1449,7 @@ async function openUsuarioModal(id=null){
       </div>
       ${!id?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Contraseña *</label><input type="password" name="password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"><p class="text-xs text-slate-400 mt-1">Mínimo 6 caracteres</p></div>`:''}
       ${id?`<div class="flex items-center gap-2"><input type="checkbox" name="activo" ${data.activo!==false?'checked':''} class="rounded text-teal-600"><label class="text-sm text-slate-700">Usuario activo</label></div>`:''}
+      ${id && (userRole==='superadmin' || userRole==='admin') ? `<div class="border-t border-slate-200 pt-3 mt-2"><label class="block text-sm font-medium text-slate-700 mb-1">Nueva Contraseña (solo admin)</label><input type="password" name="admin_new_password" minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Dejar en blanco para no cambiar"><p class="text-xs text-slate-400 mt-1">Mínimo 6 caracteres. Use con precaución.</p></div>` : ''}
     </div>
     <div class="flex justify-end gap-3 pt-4">
       <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
@@ -1463,7 +1464,6 @@ async function saveUsuario(e){
 
   if(!editingId){
     // ===== CREAR NUEVO USUARIO =====
-    // 1. Guardar la sesión actual del admin para restaurarla después
     const {data:{session:adminSession}}=await supabase.auth.getSession();
     if(!adminSession){ showToast('Sesión expirada. Inicie sesión nuevamente.','error'); return; }
     const savedAccess=adminSession.access_token;
@@ -1477,7 +1477,6 @@ async function saveUsuario(e){
     const telefono=fd.get('telefono')||'';
     const rol=fd.get('rol');
 
-    // 2. Crear usuario en Supabase Auth
     const {data:signUpData,error:signUpError}=await supabase.auth.signUp({
       email,password,
       options:{
@@ -1485,7 +1484,6 @@ async function saveUsuario(e){
       }
     });
 
-    // 3. Restaurar la sesión del admin INMEDIATAMENTE
     await supabase.auth.setSession({access_token:savedAccess,refresh_token:savedRefresh});
 
     if(signUpError){
@@ -1498,7 +1496,6 @@ async function saveUsuario(e){
       return;
     }
 
-    // 4. Verificar/crear el perfil manualmente (por si el trigger no exista)
     const {data:existingProfile}=await supabase.from('profiles').select('id').eq('id',signUpData.user.id).single();
     if(!existingProfile){
       const {error:profileError}=await supabase.from('profiles').insert([{
@@ -1524,7 +1521,30 @@ async function saveUsuario(e){
 
     const {error}=await supabase.from('profiles').update(updates).eq('id',editingId);
     if(error){ showToast('Error actualizando: '+error.message,'error'); return; }
-    showToast('Usuario actualizado correctamente');
+
+    // ===== CAMBIAR CONTRASEÑA POR ADMIN (via Edge Function) =====
+    const adminNewPass = fd.get('admin_new_password');
+    if(adminNewPass && adminNewPass.length >= 6 && (userRole==='superadmin' || userRole==='admin')){
+      try{
+        const {data:{session}} = await supabase.auth.getSession();
+        const token = session ? session.access_token : '';
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`,{
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+          body: JSON.stringify({user_id: editingId, new_password: adminNewPass})
+        });
+        if(res.ok){
+          showToast('Usuario actualizado y contraseña cambiada correctamente');
+        } else {
+          const result = await res.json();
+          showToast('Usuario actualizado, pero error cambiando contraseña: ' + (result.error || 'Error desconocido'), 'error');
+        }
+      } catch(err){
+        showToast('Usuario actualizado, pero no se pudo cambiar la contraseña automáticamente. Use el flujo de recuperación.', 'error');
+      }
+    } else {
+      showToast('Usuario actualizado correctamente');
+    }
   }
   closeModal(); navigate('usuarios');
 }
@@ -1570,6 +1590,262 @@ async function renderAuditoria(){
 
   html+=`</tbody></table></div>${!logs||logs.length===0?'<div class="p-8 text-center text-slate-400">Sin registros</div>':''}</div></div>`;
   area.innerHTML=html;
+}
+
+
+// ==================== RECUPERACIÓN DE CONTRASEÑA ====================
+let resetUserId = null;
+let resetCodeVerified = false;
+
+function openPasswordResetModal(){
+  const modal = $('modal-container');
+  const content = $('modal-content');
+  modal.classList.remove('hidden');
+  content.style.maxWidth = '24rem';
+  resetUserId = null;
+  resetCodeVerified = false;
+
+  content.innerHTML = `<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-key text-teal-600 mr-2"></i>Recuperar Contraseña</h3>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <form id="reset-step1-form" class="p-6 space-y-4" onsubmit="requestPasswordReset(event)">
+    <p class="text-sm text-slate-600">Ingrese su email y cédula para generar un código de recuperación temporal (válido por 5 minutos).</p>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico *</label>
+      <input type="email" name="email" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="usuario@ejemplo.com">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Cédula *</label>
+      <input type="text" name="cedula" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="V-12345678">
+    </div>
+    <div id="reset-step1-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-paper-plane mr-1"></i> Generar Código</button>
+    </div>
+  </form>`;
+}
+
+async function requestPasswordReset(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const email = fd.get('email');
+  const cedula = fd.get('cedula');
+  const errorDiv = $('reset-step1-error');
+  errorDiv.classList.add('hidden');
+
+  // Buscar usuario por cédula
+  const {data:profile, error:profileError} = await supabase
+    .from('profiles')
+    .select('id,email,nombres,apellidos')
+    .eq('cedula', cedula)
+    .single();
+
+  if(profileError || !profile){
+    errorDiv.textContent = 'No se encontró ningún usuario con esa cédula.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  if(profile.email !== email){
+    errorDiv.textContent = 'El email no coincide con el registrado para esta cédula.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  // Generar código de 6 dígitos
+  const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 5 * 60000).toISOString(); // 5 minutos
+
+  // Guardar en tabla password_resets
+  const {error:insertError} = await supabase.from('password_resets').insert([{
+    user_id: profile.id,
+    reset_code: resetCode,
+    expires_at: expiresAt,
+    used: false
+  }]);
+
+  if(insertError){
+    errorDiv.textContent = 'Error generando código: ' + insertError.message;
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  resetUserId = profile.id;
+
+  // Mostrar modal con el código
+  const content = $('modal-content');
+  content.innerHTML = `<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-envelope-open-text text-teal-600 mr-2"></i>Código Generado</h3>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <div class="p-6 space-y-4 text-center">
+    <div class="bg-teal-50 border-2 border-teal-200 rounded-xl p-6">
+      <p class="text-sm text-teal-700 mb-2">Código de recuperación para <strong>${profile.nombres} ${profile.apellidos}</strong></p>
+      <div class="text-4xl font-mono font-bold text-teal-800 tracking-widest bg-white rounded-lg py-3 border border-teal-300" id="reset-code-display">${resetCode}</div>
+      <p class="text-xs text-teal-600 mt-2">⏱️ Válido por 5 minutos</p>
+    </div>
+    <p class="text-sm text-slate-500">Comuníquele este código al usuario. Una vez que lo ingrese, deberá establecer una nueva contraseña antes de acceder al sistema.</p>
+    <div class="flex justify-center gap-3 pt-2">
+      <button type="button" onclick="copyResetCode()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition"><i class="fas fa-copy mr-1"></i> Copiar</button>
+      <button type="button" onclick="openVerifyCodeModal()" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-arrow-right mr-1"></i> Continuar</button>
+    </div>
+  </div>`;
+}
+
+function copyResetCode(){
+  const code = $('reset-code-display').textContent;
+  navigator.clipboard.writeText(code).then(()=>showToast('Código copiado'));
+}
+
+function openVerifyCodeModal(){
+  const content = $('modal-content');
+  content.innerHTML = `<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-shield-alt text-teal-600 mr-2"></i>Verificar Código</h3>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <form id="reset-step2-form" class="p-6 space-y-4" onsubmit="verifyResetCode(event)">
+    <p class="text-sm text-slate-600">Ingrese el código de 6 dígitos que se generó para su cuenta.</p>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Código de Recuperación *</label>
+      <input type="text" name="code" required maxlength="6" pattern="[0-9]{6}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none text-center text-2xl font-mono tracking-widest" placeholder="000000">
+    </div>
+    <div id="reset-step2-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="button" onclick="openPasswordResetModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition"><i class="fas fa-arrow-left mr-1"></i> Atrás</button>
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-check mr-1"></i> Verificar</button>
+    </div>
+  </form>`;
+}
+
+async function verifyResetCode(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const code = fd.get('code');
+  const errorDiv = $('reset-step2-error');
+  errorDiv.classList.add('hidden');
+
+  if(!resetUserId){
+    errorDiv.textContent = 'Sesión de recuperación expirada. Genere un nuevo código.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  const {data:resetRecord, error} = await supabase
+    .from('password_resets')
+    .select('*')
+    .eq('user_id', resetUserId)
+    .eq('reset_code', code)
+    .eq('used', false)
+    .order('created_at', {ascending: false})
+    .limit(1)
+    .single();
+
+  if(error || !resetRecord){
+    errorDiv.textContent = 'Código incorrecto o ya utilizado.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  // Verificar expiración
+  if(new Date(resetRecord.expires_at) < new Date()){
+    errorDiv.textContent = 'El código ha expirado. Genere uno nuevo.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  resetCodeVerified = true;
+
+  // Marcar como usado
+  await supabase.from('password_resets').update({used: true}).eq('id', resetRecord.id);
+
+  // Mostrar formulario de nueva contraseña
+  openNewPasswordModal();
+}
+
+function openNewPasswordModal(){
+  const content = $('modal-content');
+  content.innerHTML = `<div class="p-6 border-b border-slate-200 flex items-center justify-between">
+    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-lock text-teal-600 mr-2"></i>Nueva Contraseña</h3>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-xl"></i></button>
+  </div>
+  <form id="reset-step3-form" class="p-6 space-y-4" onsubmit="changePassword(event)">
+    <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+      <i class="fas fa-check-circle mr-1"></i> Código verificado correctamente. Establezca su nueva contraseña.
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Nueva Contraseña *</label>
+      <input type="password" name="new_password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Mínimo 6 caracteres">
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1">Confirmar Contraseña *</label>
+      <input type="password" name="confirm_password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" placeholder="Repita la contraseña">
+    </div>
+    <div id="reset-step3-error" class="hidden text-sm text-red-600 bg-red-50 p-2 rounded"></div>
+    <div class="flex justify-end gap-3 pt-2">
+      <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
+      <button type="submit" class="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg transition"><i class="fas fa-save mr-1"></i> Guardar Contraseña</button>
+    </div>
+  </form>`;
+}
+
+async function changePassword(e){
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const newPass = fd.get('new_password');
+  const confirmPass = fd.get('confirm_password');
+  const errorDiv = $('reset-step3-error');
+  errorDiv.classList.add('hidden');
+
+  if(newPass !== confirmPass){
+    errorDiv.textContent = 'Las contraseñas no coinciden.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  if(newPass.length < 6){
+    errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  if(!resetUserId || !resetCodeVerified){
+    errorDiv.textContent = 'Sesión de recuperación inválida. Reinicie el proceso.';
+    errorDiv.classList.remove('hidden');
+    return;
+  }
+
+  // Intentar cambiar contraseña via Edge Function
+  try{
+    const {data:{session}} = await supabase.auth.getSession();
+    const token = session ? session.access_token : '';
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`,{
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${token}`},
+      body: JSON.stringify({user_id: resetUserId, new_password: newPass})
+    });
+
+    if(res.ok){
+      closeModal();
+      showToast('Contraseña actualizada correctamente. Ahora puede iniciar sesión.');
+      resetUserId = null;
+      resetCodeVerified = false;
+      return;
+    }
+
+    // Si falla la Edge Function, intentar método alternativo
+    const result = await res.json();
+    throw new Error(result.error || 'Error en el servidor');
+
+  } catch(err){
+    // Método alternativo: mostrar instrucciones al admin
+    errorDiv.innerHTML = `<strong>No se pudo cambiar automáticamente.</strong><br>
+      Contacte al administrador del sistema para que restablezca la contraseña manualmente desde el panel de Usuarios.<br>
+      <span class="text-xs text-slate-500">Error: ${err.message}</span>`;
+    errorDiv.classList.remove('hidden');
+  }
 }
 
 // ==================== INICIALIZAR ====================
