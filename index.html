@@ -1405,7 +1405,7 @@ async function renderUsuarios(){
       <td class="px-4 py-3">
         <div class="flex items-center gap-1">
           <button onclick="openUsuarioModal('${u.id}')" class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition" title="Editar"><i class="fas fa-edit"></i></button>
-          ${userRole==='superadmin'?`<button onclick="deleteUsuario('${u.id}')" class="text-red-600 hover:bg-red-50 p-2 rounded-lg transition" title="Eliminar"><i class="fas fa-trash"></i></button>`:''}
+          ${userRole==='superadmin'?`<button onclick="deleteUsuario('${u.id}')" class="text-orange-600 hover:bg-orange-50 p-2 rounded-lg transition" title="Desactivar"><i class="fas fa-trash"></i></button>`:''}
         </div>
       </td>
     </tr>`;
@@ -1440,16 +1440,15 @@ async function openUsuarioModal(id=null){
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Nombres *</label><input type="text" name="nombres" value="${data.nombres||''}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
         <div><label class="block text-sm font-medium text-slate-700 mb-1">Apellidos *</label><input type="text" name="apellidos" value="${data.apellidos||''}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       </div>
-      <div><label class="block text-sm font-medium text-slate-700 mb-1">Email *</label><input type="email" name="email" value="${data.email||''}" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
+      <div><label class="block text-sm font-medium text-slate-700 mb-1">Email *</label><input type="email" name="email" value="${data.email||''}" ${id?'readonly':''} required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none ${id?'bg-slate-100 cursor-not-allowed':''}"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Teléfono</label><input type="text" name="telefono" value="${data.telefono||''}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Rol *</label>
         <select name="rol" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none">
           ${roles.map(r=>`<option value="${r.v}" ${data.rol===r.v?'selected':''}>${r.l}</option>`).join('')}
         </select>
       </div>
-      ${!id?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Contraseña *</label><input type="password" name="password" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>`:''}
+      ${!id?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Contraseña *</label><input type="password" name="password" required minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"><p class="text-xs text-slate-400 mt-1">Mínimo 6 caracteres</p></div>`:''}
       ${id?`<div class="flex items-center gap-2"><input type="checkbox" name="activo" ${data.activo!==false?'checked':''} class="rounded text-teal-600"><label class="text-sm text-slate-700">Usuario activo</label></div>`:''}
-      ${id?`<div><label class="block text-sm font-medium text-slate-700 mb-1">Nueva Contraseña (dejar en blanco para no cambiar)</label><input type="password" name="password" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"></div>`:''}
     </div>
     <div class="flex justify-end gap-3 pt-4">
       <button type="button" onclick="closeModal()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">Cancelar</button>
@@ -1461,48 +1460,80 @@ async function openUsuarioModal(id=null){
 async function saveUsuario(e){
   e.preventDefault();
   const fd=new FormData(e.target);
-  const payload={};
-  fd.forEach((v,k)=>{ if(v!=='')payload[k]=v; });
 
   if(!editingId){
-    const res=await fetch(`${SUPABASE_URL}/functions/v1/create-user`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${(await supabase.auth.getSession()).data.session.access_token}`},
-      body:JSON.stringify(payload)
-    });
-    const result=await res.json();
-    if(!res.ok){showToast(result.error||'Error creando usuario','error');return;}
-  } else {
-    const body={user_id:editingId};
-    if(payload.email)body.email=payload.email;
-    if(payload.password)body.password=payload.password;
-    if(payload.cedula)body.cedula=payload.cedula;
-    if(payload.nombres)body.nombres=payload.nombres;
-    if(payload.apellidos)body.apellidos=payload.apellidos;
-    if(payload.telefono)body.telefono=payload.telefono;
-    if(payload.rol)body.rol=payload.rol;
-    body.activo=fd.has('activo');
+    // ===== CREAR NUEVO USUARIO =====
+    // 1. Guardar la sesión actual del admin para restaurarla después
+    const {data:{session:adminSession}}=await supabase.auth.getSession();
+    if(!adminSession){ showToast('Sesión expirada. Inicie sesión nuevamente.','error'); return; }
+    const savedAccess=adminSession.access_token;
+    const savedRefresh=adminSession.refresh_token;
 
-    const res=await fetch(`${SUPABASE_URL}/functions/v1/update-user`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${(await supabase.auth.getSession()).data.session.access_token}`},
-      body:JSON.stringify(body)
+    const email=fd.get('email');
+    const password=fd.get('password');
+    const nombres=fd.get('nombres');
+    const apellidos=fd.get('apellidos');
+    const cedula=fd.get('cedula');
+    const telefono=fd.get('telefono')||'';
+    const rol=fd.get('rol');
+
+    // 2. Crear usuario en Supabase Auth
+    const {data:signUpData,error:signUpError}=await supabase.auth.signUp({
+      email,password,
+      options:{
+        data:{nombres,apellidos,cedula,telefono,rol}
+      }
     });
-    const result=await res.json();
-    if(!res.ok){showToast(result.error||'Error actualizando','error');return;}
+
+    // 3. Restaurar la sesión del admin INMEDIATAMENTE
+    await supabase.auth.setSession({access_token:savedAccess,refresh_token:savedRefresh});
+
+    if(signUpError){
+      showToast('Error creando usuario: '+signUpError.message,'error');
+      return;
+    }
+
+    if(!signUpData.user){
+      showToast('No se pudo crear el usuario','error');
+      return;
+    }
+
+    // 4. Verificar/crear el perfil manualmente (por si el trigger no exista)
+    const {data:existingProfile}=await supabase.from('profiles').select('id').eq('id',signUpData.user.id).single();
+    if(!existingProfile){
+      const {error:profileError}=await supabase.from('profiles').insert([{
+        id:signUpData.user.id,
+        cedula,nombres,apellidos,email,telefono,rol,activo:true
+      }]);
+      if(profileError){
+        showToast('Usuario creado en Auth, pero error en perfil: '+profileError.message,'error');
+        return;
+      }
+    }
+
+    showToast('Usuario creado correctamente. El nuevo usuario puede iniciar sesión con su email y contraseña.');
+  } else {
+    // ===== EDITAR USUARIO EXISTENTE =====
+    const updates={};
+    if(fd.get('cedula')) updates.cedula=fd.get('cedula');
+    if(fd.get('nombres')) updates.nombres=fd.get('nombres');
+    if(fd.get('apellidos')) updates.apellidos=fd.get('apellidos');
+    if(fd.get('telefono')) updates.telefono=fd.get('telefono');
+    if(fd.get('rol')) updates.rol=fd.get('rol');
+    updates.activo=fd.has('activo');
+
+    const {error}=await supabase.from('profiles').update(updates).eq('id',editingId);
+    if(error){ showToast('Error actualizando: '+error.message,'error'); return; }
+    showToast('Usuario actualizado correctamente');
   }
-  closeModal(); showToast('Usuario guardado correctamente'); navigate('usuarios');
+  closeModal(); navigate('usuarios');
 }
 
 async function deleteUsuario(id){
-  if(!confirm('¿Eliminar permanentemente este usuario?'))return;
-  const res=await fetch(`${SUPABASE_URL}/functions/v1/delete-user`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${(await supabase.auth.getSession()).data.session.access_token}`},
-    body:JSON.stringify({user_id:id})
-  });
-  if(!res.ok){showToast('Error eliminando usuario','error');return;}
-  showToast('Usuario eliminado'); navigate('usuarios');
+  if(!confirm('¿Desactivar este usuario? No podrá iniciar sesión.'))return;
+  const {error}=await supabase.from('profiles').update({activo:false}).eq('id',id);
+  if(error){showToast('Error desactivando usuario: '+error.message,'error');return;}
+  showToast('Usuario desactivado correctamente'); navigate('usuarios');
 }
 
 // ==================== AUDITORÍA ====================
